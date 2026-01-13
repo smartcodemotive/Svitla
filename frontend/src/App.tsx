@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   createFolder,
   deleteFile,
@@ -12,6 +12,10 @@ import {
 import { Breadcrumb, FileItem, Folder, FolderResponse } from "./types";
 
 type RenameTarget =
+  | { kind: "folder"; item: Folder }
+  | { kind: "file"; item: FileItem };
+
+type DeleteTarget =
   | { kind: "folder"; item: Folder }
   | { kind: "file"; item: FileItem };
 
@@ -38,6 +42,9 @@ export default function App() {
   const [renameValue, setRenameValue] = useState<string>("");
   const [renameError, setRenameError] = useState<string | null>(null);
   const [savingRename, setSavingRename] = useState<boolean>(false);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -76,23 +83,9 @@ export default function App() {
     setRenameError(null);
   }
 
-  async function onDeleteFolder(folder: Folder) {
-    const confirmed = confirm(
-      `Delete folder "${folder.name}" and everything inside?`
-    );
-    if (!confirmed) return;
-    try {
-      await deleteFolder(folder.id);
-      // If we deleted the folder we are inside, go up to parent.
-      if (currentFolderId === folder.id) {
-        const parent = breadcrumbs.at(-2);
-        setCurrentFolderId(parent ? parent.id : null);
-      } else {
-        await loadFolder(currentFolderId);
-      }
-    } catch (err: any) {
-      alert(err.message || "Failed to delete folder");
-    }
+  function onDeleteFolder(folder: Folder) {
+    setDeleteTarget({ kind: "folder", item: folder });
+    setDeleteError(null);
   }
 
   async function onUploadFiles(fileList: FileList | null) {
@@ -119,15 +112,9 @@ export default function App() {
     setRenameError(null);
   }
 
-  async function onDeleteFile(file: FileItem) {
-    const confirmed = confirm(`Delete file "${file.name}"?`);
-    if (!confirmed) return;
-    try {
-      await deleteFile(file.id);
-      await loadFolder(currentFolderId);
-    } catch (err: any) {
-      alert(err.message || "Failed to delete file");
-    }
+  function onDeleteFile(file: FileItem) {
+    setDeleteTarget({ kind: "file", item: file });
+    setDeleteError(null);
   }
 
   function onBreadcrumbClick(crumb: Breadcrumb) {
@@ -168,6 +155,37 @@ export default function App() {
     setRenameTarget(null);
     setRenameValue("");
     setRenameError(null);
+  }
+
+  async function handleDeleteConfirm() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      if (deleteTarget.kind === "folder") {
+        const folder = deleteTarget.item;
+        await deleteFolder(folder.id);
+        if (currentFolderId === folder.id) {
+          const parentId = folder.parent_id ?? null;
+          setCurrentFolderId(parentId);
+        } else {
+          await loadFolder(currentFolderId);
+        }
+      } else {
+        await deleteFile(deleteTarget.item.id);
+        await loadFolder(currentFolderId);
+      }
+      setDeleteTarget(null);
+    } catch (err: any) {
+      setDeleteError(err.message || "Failed to delete");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  function closeDeleteModal() {
+    setDeleteTarget(null);
+    setDeleteError(null);
   }
 
   return (
@@ -355,6 +373,51 @@ export default function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div className="modal" onClick={closeDeleteModal}>
+          <div
+            className="modal__content modal__content--small"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal__header">
+              <h3>
+                Delete {deleteTarget.kind === "folder" ? "folder" : "file"}?
+              </h3>
+              <button className="btn" onClick={closeDeleteModal}>
+                Cancel
+              </button>
+            </div>
+            <div className="modal__body">
+              <p>
+                {deleteTarget.kind === "folder"
+                  ? `This will remove "${deleteTarget.item.name}" and everything inside.`
+                  : `This will remove "${deleteTarget.item.name}".`}
+              </p>
+              {deleteError && (
+                <div className="alert alert--inline">{deleteError}</div>
+              )}
+              <div className="modal__actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={closeDeleteModal}
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={handleDeleteConfirm}
+                  disabled={deleting}
+                >
+                  {deleting ? "Deleting..." : "Delete"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
