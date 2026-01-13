@@ -187,3 +187,42 @@ h2 {
   width: 100%;
 }
 
+.modal__content--small {
+  width: min(420px, 100%);
+  height: auto;
+}
+
+.modal__body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-weight: 600;
+}
+
+.input {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 14px;
+}
+
+.modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.alert--inline {
+  margin: 0;
+}
+

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   createFolder,
   deleteFile,
@@ -11,6 +11,10 @@ import {
 } from "./api";
 import { Breadcrumb, FileItem, Folder, FolderResponse } from "./types";
 
+type RenameTarget =
+  | { kind: "folder"; item: Folder }
+  | { kind: "file"; item: FileItem };
+
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
   const k = 1024;
@@ -21,18 +25,23 @@ function formatBytes(bytes: number): string {
 
 export default function App() {
   const [currentFolderId, setCurrentFolderId] = useState<number | null>(null);
-  const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([{ id: null, name: "Data Room" }]);
+  const [breadcrumbs, setBreadcrumbs] = useState<Breadcrumb[]>([
+    { id: null, name: "Data Room" },
+  ]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
   const [uploading, setUploading] = useState<boolean>(false);
+  const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
+  const [renameValue, setRenameValue] = useState<string>("");
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [savingRename, setSavingRename] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     loadFolder(currentFolderId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFolderId]);
 
   async function loadFolder(folderId: number | null) {
@@ -61,19 +70,16 @@ export default function App() {
     }
   }
 
-  async function onRenameFolder(folder: Folder) {
-    const name = prompt("Rename folder", folder.name);
-    if (!name || name.trim() === folder.name) return;
-    try {
-      await renameFolder(folder.id, name.trim());
-      await loadFolder(currentFolderId);
-    } catch (err: any) {
-      alert(err.message || "Failed to rename folder");
-    }
+  function onRenameFolder(folder: Folder) {
+    setRenameTarget({ kind: "folder", item: folder });
+    setRenameValue(folder.name);
+    setRenameError(null);
   }
 
   async function onDeleteFolder(folder: Folder) {
-    const confirmed = confirm(`Delete folder "${folder.name}" and everything inside?`);
+    const confirmed = confirm(
+      `Delete folder "${folder.name}" and everything inside?`
+    );
     if (!confirmed) return;
     try {
       await deleteFolder(folder.id);
@@ -107,15 +113,10 @@ export default function App() {
     }
   }
 
-  async function onRenameFile(file: FileItem) {
-    const name = prompt("Rename file", file.name);
-    if (!name || name.trim() === file.name) return;
-    try {
-      await renameFile(file.id, name.trim());
-      await loadFolder(currentFolderId);
-    } catch (err: any) {
-      alert(err.message || "Failed to rename file");
-    }
+  function onRenameFile(file: FileItem) {
+    setRenameTarget({ kind: "file", item: file });
+    setRenameValue(file.name);
+    setRenameError(null);
   }
 
   async function onDeleteFile(file: FileItem) {
@@ -131,6 +132,42 @@ export default function App() {
 
   function onBreadcrumbClick(crumb: Breadcrumb) {
     setCurrentFolderId(crumb.id);
+  }
+
+  async function handleRenameSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!renameTarget) return;
+    const name = renameValue.trim();
+    if (!name) {
+      setRenameError("Name is required");
+      return;
+    }
+    if (renameTarget.item.name === name) {
+      setRenameTarget(null);
+      return;
+    }
+    setSavingRename(true);
+    setRenameError(null);
+    try {
+      if (renameTarget.kind === "folder") {
+        await renameFolder(renameTarget.item.id, name);
+      } else {
+        await renameFile(renameTarget.item.id, name);
+      }
+      await loadFolder(currentFolderId);
+      setRenameTarget(null);
+      setRenameValue("");
+    } catch (err: any) {
+      setRenameError(err.message || "Failed to rename");
+    } finally {
+      setSavingRename(false);
+    }
+  }
+
+  function closeRenameModal() {
+    setRenameTarget(null);
+    setRenameValue("");
+    setRenameError(null);
   }
 
   return (
@@ -166,10 +203,16 @@ export default function App() {
       <div className="breadcrumbs">
         {breadcrumbs.map((crumb, idx) => (
           <span key={crumb.id ?? "root"}>
-            <button className="link" onClick={() => onBreadcrumbClick(crumb)} disabled={idx === breadcrumbs.length - 1}>
+            <button
+              className="link"
+              onClick={() => onBreadcrumbClick(crumb)}
+              disabled={idx === breadcrumbs.length - 1}
+            >
               {crumb.name}
             </button>
-            {idx < breadcrumbs.length - 1 && <span className="breadcrumb-sep">/</span>}
+            {idx < breadcrumbs.length - 1 && (
+              <span className="breadcrumb-sep">/</span>
+            )}
           </span>
         ))}
       </div>
@@ -187,15 +230,26 @@ export default function App() {
               <ul className="card-list">
                 {folders.map((folder) => (
                   <li key={folder.id} className="card">
-                    <div className="card__body" onClick={() => setCurrentFolderId(folder.id)}>
+                    <div
+                      className="card__body"
+                      onClick={() => setCurrentFolderId(folder.id)}
+                    >
                       <div className="card__title">📁 {folder.name}</div>
-                      <div className="muted small">Updated {new Date(folder.updated_at).toLocaleString()}</div>
+                      <div className="muted small">
+                        Updated {new Date(folder.updated_at).toLocaleString()}
+                      </div>
                     </div>
                     <div className="card__actions">
-                      <button className="link" onClick={() => onRenameFolder(folder)}>
+                      <button
+                        className="link"
+                        onClick={() => onRenameFolder(folder)}
+                      >
                         Rename
                       </button>
-                      <button className="link danger" onClick={() => onDeleteFolder(folder)}>
+                      <button
+                        className="link danger"
+                        onClick={() => onDeleteFolder(folder)}
+                      >
                         Delete
                       </button>
                     </div>
@@ -216,20 +270,35 @@ export default function App() {
                     <div className="card__body">
                       <div className="card__title">📄 {file.name}</div>
                       <div className="muted small">
-                        {formatBytes(file.size)} • Uploaded {new Date(file.created_at).toLocaleString()}
+                        {formatBytes(file.size)} • Uploaded{" "}
+                        {new Date(file.created_at).toLocaleString()}
                       </div>
                     </div>
                     <div className="card__actions">
-                      <button className="link" onClick={() => setPreviewFile(file)}>
+                      <button
+                        className="link"
+                        onClick={() => setPreviewFile(file)}
+                      >
                         View
                       </button>
-                      <a className="link" href={getPreviewUrl(file)} target="_blank" rel="noreferrer">
+                      <a
+                        className="link"
+                        href={getPreviewUrl(file)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
                         Download
                       </a>
-                      <button className="link" onClick={() => onRenameFile(file)}>
+                      <button
+                        className="link"
+                        onClick={() => onRenameFile(file)}
+                      >
                         Rename
                       </button>
-                      <button className="link danger" onClick={() => onDeleteFile(file)}>
+                      <button
+                        className="link danger"
+                        onClick={() => onDeleteFile(file)}
+                      >
                         Delete
                       </button>
                     </div>
@@ -238,6 +307,55 @@ export default function App() {
               </ul>
             )}
           </section>
+        </div>
+      )}
+
+      {renameTarget && (
+        <div className="modal" onClick={closeRenameModal}>
+          <div
+            className="modal__content modal__content--small"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal__header">
+              <h3>
+                Rename {renameTarget.kind === "folder" ? "folder" : "file"}
+              </h3>
+              <button className="btn" onClick={closeRenameModal}>
+                Cancel
+              </button>
+            </div>
+            <form className="modal__body" onSubmit={handleRenameSubmit}>
+              <label className="field">
+                <span className="label">New name</span>
+                <input
+                  autoFocus
+                  className="input"
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  placeholder="Enter new name"
+                />
+              </label>
+              {renameError && (
+                <div className="alert alert--inline">{renameError}</div>
+              )}
+              <div className="modal__actions">
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={closeRenameModal}
+                >
+                  Close
+                </button>
+                <button
+                  type="submit"
+                  className="btn primary"
+                  disabled={savingRename}
+                >
+                  {savingRename ? "Saving..." : "Save"}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
@@ -250,11 +368,14 @@ export default function App() {
                 Close
               </button>
             </div>
-            <iframe title="preview" src={getPreviewUrl(previewFile)} className="modal__preview" />
+            <iframe
+              title="preview"
+              src={getPreviewUrl(previewFile)}
+              className="modal__preview"
+            />
           </div>
         </div>
       )}
     </div>
   );
 }
-
