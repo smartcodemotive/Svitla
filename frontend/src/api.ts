@@ -91,9 +91,10 @@ export async function deleteFile(fileId: number): Promise<void> {
 }
 
 export function getPreviewUrl(file: FileItem): string {
-  if (file.download_url.starts_with("http")) {
-    return file.download_url;
+  const url = file.download_url;
+  if (url.startsWith("http")) {
+    return url;
   }
-  return `${API_BASE}${file.download_url}`;
+  return `${API_BASE}${url}`;
 }
 

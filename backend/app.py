@@ -300,5 +300,10 @@ def create_app():
 app = create_app()
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    host = os.getenv("FLASK_HOST", "0.0.0.0")
+    port = int(os.getenv("FLASK_PORT", "5000"))
+    # Windows + reloader can trigger socket.fromfd issues; disable reloader on nt.
+    use_reloader = debug and os.name != "nt"
+    app.run(debug=debug, host=host, port=port, use_reloader=use_reloader)
 
