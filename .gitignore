@@ -6,7 +6,7 @@ build/
 __pycache__/
 .venv/
 env/
-.env
 *.db
 backend/storage/
 
+config.bat
